@@ -1,0 +1,50 @@
+name: Build Job
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: "Pull Request Number"
+        required: true
+        type: number
+      changed_services:
+        description: "JSON array of changed services"
+        required: true
+        type: string
+
+jobs:
+  build-pr:
+    runs-on: ubuntu-latest
+    environment: staging
+    strategy:
+      matrix:
+        service: ${{ fromJSON(inputs.changed_services) }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker Auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build & Push Image
+        run: |
+          IMAGE="${{ secrets.GCP_AR_REPO }}/${{ matrix.service }}:pr-${{ inputs.pr_number }}"
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            docker build \
+              --build-arg VITE_CLOUD_RUN_SUFFIX=${{ secrets.CLOUD_RUN_URL_SUFFIX }} \
+              --build-arg VITE_API_ORDER_URL=${{ secrets.VITE_API_ORDER_URL }} \
+              --build-arg VITE_API_INVENTORY_URL=${{ secrets.VITE_API_INVENTORY_URL }} \
+              --build-arg VITE_API_NOTIFICATION_URL=${{ secrets.VITE_API_NOTIFICATION_URL }} \
+              -t $IMAGE ./app/${{ matrix.service }}
+          else
+            docker build -t $IMAGE ./app/${{ matrix.service }}
+          fi
+          docker push $IMAGE

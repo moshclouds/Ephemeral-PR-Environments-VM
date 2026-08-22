@@ -1,0 +1,22 @@
+# Root .gitignore
+
+node_modules/
+.env
+.env.*
+!.env.sample
+
+# IDEs
+.vscode/
+.idea/
+*.suo   
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# keys
+keys/
+
+# certbot
+certbot_conf/
+certbot_www/

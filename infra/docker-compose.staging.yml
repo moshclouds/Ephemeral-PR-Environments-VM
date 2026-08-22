@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # Databases (Internal Only)
+  # ==========================================
+  postgres-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-db:
+    image: mongo:6-jammy
+    entrypoint: [
+      "/bin/sh",
+      "-c",
+      "mongod --replSet rs0 --bind_ip_all & MONGOD_PID=$$!; sleep 4; mongosh --eval 'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"mongo-db:27017\"}]})' || true; wait $$MONGOD_PID"
+    ]
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Applications
+  # ==========================================
+  order-service:
+    image: ${GCP_AR_REPO}/order-service:staging
+    restart: unless-stopped
+    env_file:
+      - ../app/order-service/.env
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+
+  inventory-service:
+    image: ${GCP_AR_REPO}/inventory-service:staging
+    restart: unless-stopped
+    env_file:
+      - ../app/inventory-service/.env
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+
+  frontend:
+    image: ${GCP_AR_REPO}/frontend:staging
+    restart: unless-stopped
+    depends_on:
+      - order-service
+      - inventory-service
+      - notification-service
+
+  notification-service:
+    image: ${GCP_AR_REPO}/notification-service:staging
+    restart: unless-stopped
+    env_file:
+      - ../app/notification-service/.env
+    depends_on:
+      mongo-db:
+        condition: service_healthy
+
+
