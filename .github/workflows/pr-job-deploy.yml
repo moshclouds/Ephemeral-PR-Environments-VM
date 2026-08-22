@@ -65,6 +65,6 @@ jobs:
             --name $SERVICE_NAME \
             --network preview-net \
             --label "traefik.enable=true" \
-            --label "traefik.http.routers.${SERVICE_NAME}.rule=Host('${URL}')" \
+            --label "traefik.http.routers.${SERVICE_NAME}.rule=Host(\`${URL}\`)" \
             --label "traefik.http.routers.${SERVICE_NAME}.tls.certresolver=myresolver" \
             $IMAGE
