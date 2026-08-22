@@ -22,12 +22,18 @@ jobs:
       
       - name: Clone Order DB
         if: contains(fromJson(inputs.changed_services), 'order-service')
+        env:
+          STAGING_INTERNAL_IP: ${{ secrets.STAGING_INTERNAL_IP }}
         run: bash ./scripts/clone_db.sh order-service ${{ inputs.pr_number }}
 
       - name: Clone Inventory DB
         if: contains(fromJson(inputs.changed_services), 'inventory-service')
+        env:
+          STAGING_INTERNAL_IP: ${{ secrets.STAGING_INTERNAL_IP }}
         run: bash ./scripts/clone_db.sh inventory-service ${{ inputs.pr_number }}
 
       - name: Clone Notification DB
         if: contains(fromJson(inputs.changed_services), 'notification-service')
+        env:
+          STAGING_INTERNAL_IP: ${{ secrets.STAGING_INTERNAL_IP }}
         run: bash ./scripts/clone_db.sh notification-service ${{ inputs.pr_number }}
