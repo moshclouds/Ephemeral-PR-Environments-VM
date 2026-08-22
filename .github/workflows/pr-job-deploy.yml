@@ -19,8 +19,17 @@ jobs:
     strategy:
       matrix:
         service: ${{ fromJSON(inputs.changed_services) }}
+  
     steps:
+      - name: Login to Infisical
+        run: |
+          infisical login --method=universal-auth \
+            --client-id=${{ secrets.INFISICAL_CLIENT_ID }} \
+            --client-secret=${{ secrets.INFISICAL_CLIENT_SECRET }}
+            
       - name: Deploy to Preview VM
+        env:
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
         run: |
           IMAGE="${{ secrets.GCP_AR_REPO }}/${{ matrix.service }}:pr-${{ inputs.pr_number }}"
           SERVICE_NAME="${{ matrix.service }}-pr-${{ inputs.pr_number }}"
