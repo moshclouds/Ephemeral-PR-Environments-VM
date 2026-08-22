@@ -19,45 +19,51 @@ jobs:
       matrix:
         service: ${{ fromJSON(inputs.changed_services) }}
     steps:
-      - name: Deploy to Cloud Run
+      - name: Deploy to Preview VM
         run: |
           IMAGE="${{ secrets.GCP_AR_REPO }}/${{ matrix.service }}:pr-${{ inputs.pr_number }}"
           SERVICE_NAME="${{ matrix.service }}-pr-${{ inputs.pr_number }}"
-          PR_NUM="${{ inputs.pr_number }}"
-          VM_IP="${{ secrets.VM_INTERNAL_IP }}"
+          PR_ENV="pr-${{ inputs.pr_number }}"
+          DOMAIN="${{ secrets.PREVIEW_DOMAIN }}" # e.g. preview.yourdomain.com
+          URL="${SERVICE_NAME}.${DOMAIN}"
           
-          # 1. Source (load) credentials dynamically from the VM's file system
-          export $(grep -v '^#' $HOME/Ephemeral-PR-Environments/infra/.env | xargs)
+          echo "Deploying $SERVICE_NAME to https://$URL"
           
-          # 2. Load service-level envs, but strip out 'DATABASE_URL' and 'PORT' to prevent conflict
-          SERVICE_ENV_FILE="$HOME/Ephemeral-PR-Environments/app/${{ matrix.service }}/.env"
+          # 1. Create Infisical Environment (if it doesn't exist)
+          infisical environments create --name $PR_ENV --slug $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }} || true
           
-          if [ -f "$SERVICE_ENV_FILE" ]; then
-            SERVICE_ENVS=$(grep -v '^#' "$SERVICE_ENV_FILE" | grep -v '^$' | grep -v '^DATABASE_URL=' | grep -v '^PORT=' | paste -sd "," -)
-          else
-            SERVICE_ENVS=""
-          fi
-          
-          DEPLOY_FLAGS=""
-          PORT=80
+          # 2. Inject Dynamic DB URL if backend
           if [ "${{ matrix.service }}" == "order-service" ]; then
-            PORT=3000
-            DB_ENV="DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@${VM_IP}:5432/order_db_pr_${PR_NUM}"
-            DEPLOY_FLAGS="--vpc-egress private-ranges-only --network default --subnet default --set-env-vars $DB_ENV,$SERVICE_ENVS --set-env-vars CLOUD_RUN_URL_SUFFIX=${{ secrets.CLOUD_RUN_URL_SUFFIX }}"
+            infisical secrets set DATABASE_URL="postgresql://postgres:postgres@preview-postgres:5432/order_db_${PR_ENV}" --env $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }}
           elif [ "${{ matrix.service }}" == "inventory-service" ]; then
-            PORT=3001
-            DB_ENV="DATABASE_URL=mysql://root:$MYSQL_ROOT_PASSWORD@${VM_IP}:3306/inventory_db_pr_${PR_NUM}"
-            DEPLOY_FLAGS="--vpc-egress private-ranges-only --network default --subnet default --set-env-vars $DB_ENV,$SERVICE_ENVS --set-env-vars CLOUD_RUN_URL_SUFFIX=${{ secrets.CLOUD_RUN_URL_SUFFIX }}"
+            infisical secrets set DATABASE_URL="mysql://root:mysqlroot@preview-mysql:3306/inventory_db_${PR_ENV}" --env $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }}
           elif [ "${{ matrix.service }}" == "notification-service" ]; then
-            PORT=3002
-            DB_ENV="DATABASE_URL=mongodb://${VM_IP}:27017/notification_db_pr_${PR_NUM}?replicaSet=rs0&directConnection=true"
-            DEPLOY_FLAGS="--vpc-egress private-ranges-only --network default --subnet default --set-env-vars $DB_ENV,$SERVICE_ENVS --set-env-vars CLOUD_RUN_URL_SUFFIX=${{ secrets.CLOUD_RUN_URL_SUFFIX }}"
+            infisical secrets set DATABASE_URL="mongodb://preview-mongo:27017/notification_db_${PR_ENV}?replicaSet=rs0&directConnection=true" --env $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }}
           fi
           
-          # 3. Deploy (gcloud is ambiently authenticated on the VM; no GCP_SA_KEY auth needed)
-          gcloud run deploy $SERVICE_NAME \
-            --image $IMAGE \
-            --region us-central1 \
-            --port $PORT \
-            --allow-unauthenticated \
-            $DEPLOY_FLAGS
+          # 3. Register Webhook (Using the API)
+          curl --silent --request POST \
+            --url https://infisical.${DOMAIN}/api/v1/webhooks \
+            --header "Authorization: Bearer ${{ secrets.INFISICAL_TOKEN }}" \
+            --header "Content-Type: application/json" \
+            --data '{
+              "workspaceId": "${{ secrets.INFISICAL_PROJECT_ID }}",
+              "environment": "'$PR_ENV'",
+              "secretPath": "/",
+              "webhookUrl": "https://webhook.'$DOMAIN'/hooks/infisical?app=${{ matrix.service }}",
+              "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
+          }' || true
+
+          # 4. Remove old container if exists
+          docker stop $SERVICE_NAME || true
+          docker rm $SERVICE_NAME || true
+          
+          # 5. Run Docker Container using Infisical CLI for secrets, attached to preview-net
+          infisical run --projectId ${{ secrets.INFISICAL_PROJECT_ID }} --env $PR_ENV -- \
+          docker run -d \
+            --name $SERVICE_NAME \
+            --network preview-net \
+            --label "traefik.enable=true" \
+            --label "traefik.http.routers.${SERVICE_NAME}.rule=Host('${URL}')" \
+            --label "traefik.http.routers.${SERVICE_NAME}.tls.certresolver=myresolver" \
+            $IMAGE

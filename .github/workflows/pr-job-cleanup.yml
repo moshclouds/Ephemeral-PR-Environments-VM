@@ -15,15 +15,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         
-      - name: Delete Cloud Run Services
+      - name: Delete Docker Containers
         run: |
-          gcloud run services delete order-service-pr-${{ inputs.pr_number }} --region=us-central1 --quiet || true
-          gcloud run services delete inventory-service-pr-${{ inputs.pr_number }} --region=us-central1 --quiet || true
-          gcloud run services delete notification-service-pr-${{ inputs.pr_number }} --region=us-central1 --quiet || true
-          gcloud run services delete frontend-pr-${{ inputs.pr_number }} --region=us-central1 --quiet || true
+          for SERVICE in order-service inventory-service notification-service frontend; do
+            CONTAINER_NAME="${SERVICE}-pr-${{ inputs.pr_number }}"
+            docker stop $CONTAINER_NAME || true
+            docker rm $CONTAINER_NAME || true
+          done
           
       - name: Cleanup Databases
         run: |
           bash ./scripts/cleanup_pr.sh order-service ${{ inputs.pr_number }} || true
           bash ./scripts/cleanup_pr.sh inventory-service ${{ inputs.pr_number }} || true
           bash ./scripts/cleanup_pr.sh notification-service ${{ inputs.pr_number }} || true
+
+      - name: Delete Infisical Environments
+        run: |
+          PR_ENV="pr-${{ inputs.pr_number }}"
+          infisical environments delete --slug $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }} || true
+
+      - name: Prune Unused Docker Images
+        run: docker image prune -a -f

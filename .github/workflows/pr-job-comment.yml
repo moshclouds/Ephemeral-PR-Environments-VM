@@ -17,50 +17,40 @@ jobs:
     if: ${{ inputs.changed_services != '[]' && inputs.changed_services != '' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Frontend Query Params
-        id: params
-        run: |
-          PARAMS=""
-          if echo '${{ inputs.changed_services }}' | grep -q '"order-service"'; then PARAMS="${PARAMS}order_pr=${{ inputs.pr_number }}&"; fi
-          if echo '${{ inputs.changed_services }}' | grep -q '"inventory-service"'; then PARAMS="${PARAMS}inventory_pr=${{ inputs.pr_number }}&"; fi
-          if echo '${{ inputs.changed_services }}' | grep -q '"notification-service"'; then PARAMS="${PARAMS}notification_pr=${{ inputs.pr_number }}&"; fi
-          PARAMS=${PARAMS%&}
-          echo "query=?$PARAMS" >> $GITHUB_OUTPUT
-
       - name: Comment on PR
         uses: actions/github-script@v7
         with:
           script: |
             const prNum = ${{ inputs.pr_number }};
-            const suffix = '${{ secrets.CLOUD_RUN_URL_SUFFIX }}';
+            const domain = '${{ secrets.PREVIEW_DOMAIN }}';
             const changedServices = ${{ inputs.changed_services }};
             const frontendChanged = changedServices.includes('frontend');
             
             let feUrl;
             if (frontendChanged) {
-              feUrl = `https://frontend-pr-${prNum}${suffix}${{ steps.params.outputs.query }}`;
+              feUrl = `https://frontend-pr-${prNum}.${domain}`;
             } else {
-              feUrl = `https://client-web-app.ephemeral-poc.run.place${{ steps.params.outputs.query }}`;
+              feUrl = `https://frontend.staging.${domain}`;
             }
             
             let deployedServices = '';
             if (frontendChanged) {
-              deployedServices += `- **Frontend:** [https://frontend-pr-${prNum}${suffix}](https://frontend-pr-${prNum}${suffix})\n`;
+              deployedServices += `- **Frontend:** [https://frontend-pr-${prNum}.${domain}](https://frontend-pr-${prNum}.${domain})\n`;
             }
             if (changedServices.includes('order-service')) {
-              deployedServices += `- **Order Service:** [https://order-service-pr-${prNum}${suffix}](https://order-service-pr-${prNum}${suffix})\n`;
+              deployedServices += `- **Order Service:** [https://order-service-pr-${prNum}.${domain}](https://order-service-pr-${prNum}.${domain})\n`;
             }
             if (changedServices.includes('inventory-service')) {
-              deployedServices += `- **Inventory Service:** [https://inventory-service-pr-${prNum}${suffix}](https://inventory-service-pr-${prNum}${suffix})\n`;
+              deployedServices += `- **Inventory Service:** [https://inventory-service-pr-${prNum}.${domain}](https://inventory-service-pr-${prNum}.${domain})\n`;
             }
             if (changedServices.includes('notification-service')) {
-              deployedServices += `- **Notification Service:** [https://notification-service-pr-${prNum}${suffix}](https://notification-service-pr-${prNum}${suffix})\n`;
+              deployedServices += `- **Notification Service:** [https://notification-service-pr-${prNum}.${domain}](https://notification-service-pr-${prNum}.${domain})\n`;
             }
 
             const body = `🚀 **Ephemeral PR Environment Deployed!**\n\n` +
                          `Test your changes instantly using this link:\n` +
                          `👉 [**Open Frontend PR Dashboard**](${feUrl})\n\n` +
-                         `### Deployed Cloud Run Services:\n` + deployedServices;
+                         `### Deployed Preview Services:\n` + deployedServices;
             
             github.rest.issues.createComment({
               issue_number: prNum,
