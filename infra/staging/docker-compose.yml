@@ -53,7 +53,7 @@ services:
     image: ${GCP_AR_REPO}/order-service:staging
     restart: unless-stopped
     env_file:
-      - ../app/order-service/.env
+      - ../../app/order-service/.env
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -62,7 +62,7 @@ services:
     image: ${GCP_AR_REPO}/inventory-service:staging
     restart: unless-stopped
     env_file:
-      - ../app/inventory-service/.env
+      - ../../app/inventory-service/.env
     depends_on:
       mysql-db:
         condition: service_healthy
@@ -79,9 +79,36 @@ services:
     image: ${GCP_AR_REPO}/notification-service:staging
     restart: unless-stopped
     env_file:
-      - ../app/notification-service/.env
+      - ../../app/notification-service/.env
     depends_on:
       mongo-db:
         condition: service_healthy
 
+  # ==========================================
+  # NGINX Reverse Proxy
+  # ==========================================
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot_conf:/etc/letsencrypt
+      - ./certbot_www:/var/www/certbot
+    depends_on:
+      - order-service
+      - inventory-service
+      - notification-service
 
+  # ==========================================
+  # Certbot SSL
+  # ==========================================
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot_www:/var/www/certbot
+      - ./certbot_conf:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"

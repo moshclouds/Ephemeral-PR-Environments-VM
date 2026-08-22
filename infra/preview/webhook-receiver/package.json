@@ -1,0 +1,13 @@
+{
+  "name": "infisical-webhook-receiver",
+  "version": "1.0.0",
+  "description": "Restarts ephemeral PR containers when Infisical secrets change.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
+

@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. Reverse Proxy
+  # ==========================================
+  traefik:
+    image: traefik:v3.7
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=your-email@example.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./acme.json:/letsencrypt/acme.json"
+    restart: unless-stopped
+    networks:
+      - preview-net
+
+  # ==========================================
+  # 2. Unified Databases (For Infisical & PRs)
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: preview-postgres
+    restart: always
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - preview_pg_data:/var/lib/postgresql/data
+    networks:
+      - preview-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  mysql:
+    image: mysql:8.0
+    container_name: preview-mysql
+    restart: always
+    env_file: .env
+    ports:
+      - "3306:3306"
+    volumes:
+      - preview_mysql_data:/var/lib/mysql
+    networks:
+      - preview-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:6-jammy
+    container_name: preview-mongo
+    restart: always
+    entrypoint: [
+      "/bin/sh",
+      "-c",
+      "mongod --replSet rs0 --bind_ip_all & MONGOD_PID=$$!; sleep 4; mongosh --eval 'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"preview-mongo:27017\"}]})' || true; wait $$MONGOD_PID"
+    ]
+    ports:
+      - "27017:27017"
+    volumes:
+      - preview_mongo_data:/data/db
+    networks:
+      - preview-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # 3. Infisical (Self-Hosted Secrets)
+  # ==========================================
+  redis:
+    image: redis
+    container_name: preview-infisical-redis
+    restart: always
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      - preview-net
+    volumes:
+      - preview_redis_data:/data
+
+  infisical-backend:
+    container_name: preview-infisical
+    image: infisical/infisical:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file: .env
+    networks:
+      - preview-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.infisical.rule=Host('infisical.preview.yourdomain.com')"
+      - "traefik.http.routers.infisical.tls.certresolver=myresolver"
+      - "traefik.http.services.infisical.loadbalancer.server.port=8080"
+
+  # ==========================================
+  # 4. Automation Services
+  # ==========================================
+  webhook-receiver:
+    build: ./webhook-receiver
+    container_name: preview-webhook-receiver
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - preview-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webhook.rule=Host('webhook.preview.yourdomain.com')"
+      - "traefik.http.routers.webhook.tls.certresolver=myresolver"
+      - "traefik.http.services.webhook.loadbalancer.server.port=3000"
+
+volumes:
+  preview_pg_data:
+  preview_mysql_data:
+  preview_mongo_data:
+  preview_redis_data:
+
+networks:
+  preview-net:
+    driver: bridge
