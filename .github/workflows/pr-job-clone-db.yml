@@ -14,7 +14,8 @@ on:
 
 jobs:
   clone-db:
-    runs-on: self-hosted
+    runs-on: [self-hosted, preview-vm]
+    environment: preview
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

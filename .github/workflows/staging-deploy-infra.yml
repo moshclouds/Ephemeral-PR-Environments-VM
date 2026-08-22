@@ -11,6 +11,7 @@ jobs:
   # JOB 1: Build & Push All Services (Runs on GitHub Cloud Servers - FREE CPU/RAM)
   build-and-push:
     runs-on: ubuntu-latest
+    environment: staging
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
