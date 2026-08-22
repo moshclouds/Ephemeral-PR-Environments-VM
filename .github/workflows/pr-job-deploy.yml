@@ -25,7 +25,8 @@ jobs:
         run: |
           infisical login --method=universal-auth \
             --client-id=${{ secrets.INFISICAL_CLIENT_ID }} \
-            --client-secret=${{ secrets.INFISICAL_CLIENT_SECRET }}
+            --client-secret=${{ secrets.INFISICAL_CLIENT_SECRET }} \
+            --domain=https://infisical.${{ secrets.PREVIEW_DOMAIN }}
             
       - name: Deploy to Preview VM
         env:
