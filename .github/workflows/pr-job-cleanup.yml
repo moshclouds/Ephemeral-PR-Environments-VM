@@ -33,7 +33,19 @@ jobs:
       - name: Delete Infisical Environments
         run: |
           PR_ENV="pr-${{ inputs.pr_number }}"
-          infisical environments delete --slug $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }} || true
+          DOMAIN="${{ secrets.PREVIEW_DOMAIN }}"
+          
+          ACCESS_TOKEN=$(curl --silent --request POST \
+            --url https://infisical.${DOMAIN}/api/v1/auth/universal-auth/login \
+            --header "Content-Type: application/json" \
+            --data '{
+              "clientId": "${{ secrets.INFISICAL_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.INFISICAL_CLIENT_SECRET }}"
+            }' | jq -r '.accessToken')
+          
+          curl --silent --request DELETE \
+            --url https://infisical.${DOMAIN}/api/v1/workspace/${{ secrets.INFISICAL_PROJECT_ID }}/environments/$PR_ENV \
+            --header "Authorization: Bearer $ACCESS_TOKEN" || true
 
       - name: Prune Unused Docker Images
         run: docker image prune -a -f

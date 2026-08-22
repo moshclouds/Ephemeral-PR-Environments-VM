@@ -9,29 +9,27 @@ if [ -z "$SERVICE_NAME" ] || [ -z "$PR_NUMBER" ]; then
   exit 1
 fi
 
-COMPOSE_CMD="docker compose -f infra/docker-compose.staging.yml --env-file $HOME/Ephemeral-PR-Environments/infra/.env"
-
-echo "Cleaning up database for $SERVICE_NAME (PR #$PR_NUMBER)..."
+echo "Cleaning up database for $SERVICE_NAME (PR #$PR_NUMBER) on Preview VM..."
 
 case "$SERVICE_NAME" in
   order-service)
     TARGET_DB="order_db_pr_${PR_NUMBER}"
     echo "Dropping Postgres DB: $TARGET_DB"
     echo "Force-disconnecting active sessions from $TARGET_DB..."
-    $COMPOSE_CMD exec -T postgres-db psql -U ${POSTGRES_USER:-user} -d postgres -c "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '${TARGET_DB}' AND pid <> pg_backend_pid();"
-    $COMPOSE_CMD exec -T postgres-db psql -U ${POSTGRES_USER:-user} -d postgres -c "DROP DATABASE IF EXISTS ${TARGET_DB};"
+    docker exec -i preview-postgres psql -U postgres -d postgres -c "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '${TARGET_DB}' AND pid <> pg_backend_pid();" || true
+    docker exec -i preview-postgres psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS ${TARGET_DB};" || true
     echo "Successfully cleaned up Postgres DB"
     ;;
   inventory-service)
     TARGET_DB="inventory_db_pr_${PR_NUMBER}"
     echo "Dropping MySQL DB: $TARGET_DB"
-    $COMPOSE_CMD exec -T mysql-db mysql -u${MYSQL_USER:-root} -p${MYSQL_PASSWORD:-password} -e "DROP DATABASE IF EXISTS ${TARGET_DB};"
+    docker exec -i preview-mysql mysql -uroot -pmysqlroot -e "DROP DATABASE IF EXISTS ${TARGET_DB};" || true
     echo "Successfully cleaned up MySQL DB"
     ;;
   notification-service)
     TARGET_DB="notification_db_pr_${PR_NUMBER}"
     echo "Dropping MongoDB Database: $TARGET_DB"
-    $COMPOSE_CMD exec -T mongo-db mongosh --eval "db.getSiblingDB('${TARGET_DB}').dropDatabase()"
+    docker exec -i preview-mongo mongosh --eval "db.getSiblingDB('${TARGET_DB}').dropDatabase()" || true
     echo "Successfully cleaned up MongoDB"
     ;;
   *)
