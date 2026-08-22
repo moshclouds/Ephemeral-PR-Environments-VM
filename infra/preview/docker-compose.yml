@@ -23,7 +23,7 @@ services:
       - "443:443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "./acme.json:/letsencrypt/acme.json"
+      - letsencrypt_data:/letsencrypt
     restart: unless-stopped
     networks:
       - preview-net
@@ -141,6 +141,7 @@ volumes:
   preview_mysql_data:
   preview_mongo_data:
   preview_redis_data:
+  letsencrypt_data:
 
 networks:
   preview-net:
