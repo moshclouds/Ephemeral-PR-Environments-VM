@@ -10,7 +10,7 @@ on:
 
 jobs:
   cleanup-pr:
-    runs-on: [self-hosted, preview]
+    runs-on: [self-hosted, preview-vm]
     environment: preview
     steps:
       - name: Checkout Code

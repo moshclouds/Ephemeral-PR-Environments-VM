@@ -40,7 +40,7 @@ jobs:
   # JOB 2: Deploy (Runs on Staging VM)
   deploy:
     needs: build-and-push
-    runs-on: [self-hosted, staging]
+    runs-on: [self-hosted, staging-vm]
     environment: staging
     steps:
       - name: Checkout Code

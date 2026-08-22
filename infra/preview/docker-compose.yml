@@ -111,7 +111,7 @@ services:
       - preview-net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.infisical.rule=Host('infisical.preview.yourdomain.com')"
+      - "traefik.http.routers.infisical.rule=Host('infisical.ephemeral-poc.run.place')"
       - "traefik.http.routers.infisical.tls.certresolver=myresolver"
       - "traefik.http.services.infisical.loadbalancer.server.port=8080"
 
@@ -129,7 +129,7 @@ services:
       - preview-net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.webhook.rule=Host('webhook.preview.yourdomain.com')"
+      - "traefik.http.routers.webhook.rule=Host('webhook.ephemeral-poc.run.place')"
       - "traefik.http.routers.webhook.tls.certresolver=myresolver"
       - "traefik.http.services.webhook.loadbalancer.server.port=3000"
 
