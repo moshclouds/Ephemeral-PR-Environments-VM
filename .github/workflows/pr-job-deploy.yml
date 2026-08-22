@@ -14,7 +14,8 @@ on:
 
 jobs:
   deploy-pr:
-    runs-on: self-hosted
+    runs-on: [self-hosted, preview]
+    environment: preview
     strategy:
       matrix:
         service: ${{ fromJSON(inputs.changed_services) }}

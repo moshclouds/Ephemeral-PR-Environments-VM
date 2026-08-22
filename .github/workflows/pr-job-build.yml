@@ -39,7 +39,6 @@ jobs:
           IMAGE="${{ secrets.GCP_AR_REPO }}/${{ matrix.service }}:pr-${{ inputs.pr_number }}"
           if [ "${{ matrix.service }}" == "frontend" ]; then
             docker build \
-              --build-arg VITE_CLOUD_RUN_SUFFIX=${{ secrets.CLOUD_RUN_URL_SUFFIX }} \
               --build-arg VITE_API_ORDER_URL=${{ secrets.VITE_API_ORDER_URL }} \
               --build-arg VITE_API_INVENTORY_URL=${{ secrets.VITE_API_INVENTORY_URL }} \
               --build-arg VITE_API_NOTIFICATION_URL=${{ secrets.VITE_API_NOTIFICATION_URL }} \

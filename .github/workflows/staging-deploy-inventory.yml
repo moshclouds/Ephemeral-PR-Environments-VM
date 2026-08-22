@@ -35,7 +35,7 @@ jobs:
   # JOB 2: Deploy (Runs on Staging VM)
   deploy:
     needs: build-and-push
-    runs-on: self-hosted
+    runs-on: [self-hosted, staging]
     environment: staging
     steps:
       - name: Checkout Code
@@ -46,7 +46,7 @@ jobs:
 
       - name: Pull and Restart Container
         run: |
-          cd ~/Ephemeral-PR-Environments/infra
+          cd ~/Ephemeral-PR-Environments/infra/staging
           
           # Export the AR Repo URL so docker-compose can use it
           export GCP_AR_REPO="${{ secrets.GCP_AR_REPO }}"
@@ -55,6 +55,6 @@ jobs:
           gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
           
           # Pull the new image and restart only inventory-service
-          docker compose -f docker-compose.staging.yml pull inventory-service
-          docker compose -f docker-compose.staging.yml up -d --no-deps inventory-service
+          docker compose -f docker-compose.yml pull inventory-service
+          docker compose -f docker-compose.yml up -d --no-deps inventory-service
           docker restart nginx-proxy

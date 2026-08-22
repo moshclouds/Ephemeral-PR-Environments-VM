@@ -47,7 +47,7 @@ jobs:
   # JOB 2: Deploy All (Runs on Staging VM)
   deploy:
     needs: build-and-push
-    runs-on: self-hosted
+    runs-on: [self-hosted, staging]
     environment: staging
     steps:
       - name: Checkout Code
@@ -58,7 +58,7 @@ jobs:
 
       - name: Pull and Restart All Containers
         run: |
-          cd ~/Ephemeral-PR-Environments/infra
+          cd ~/Ephemeral-PR-Environments/infra/staging
           
           # Export the AR Repo URL so docker-compose can use it
           export GCP_AR_REPO="${{ secrets.GCP_AR_REPO }}"
@@ -67,8 +67,8 @@ jobs:
           gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
           
           # Pull all images and start full stack
-          docker compose -f docker-compose.staging.yml pull
-          docker compose -f docker-compose.staging.yml up -d
+          docker compose -f docker-compose.yml pull
+          docker compose -f docker-compose.yml up -d
           
       - name: Docker Cleanup
         run: docker image prune -f
