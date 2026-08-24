@@ -72,12 +72,26 @@ jobs:
 
           rm -f /tmp/staging_key
 
-          # Import all into Infisical
+          # Import each non-blank, non-comment KEY=VALUE into Infisical
           while IFS= read -r line || [ -n "$line" ]; do
+            # skip blanks and comments
+            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            # must contain =
+            [[ "$line" != *"="* ]] && continue
+
             key="${line%%=*}"
             val="${line#*=}"
+            # trim whitespace around key
+            key="$(echo "$key" | xargs)"
+            # strip surrounding quotes from value
             val="${val%\"}" ; val="${val#\"}"
             val="${val%\'}" ; val="${val#\'}"
+
+            # Infisical rejects empty key or empty value
+            [ -z "$key" ] && continue
+            [ -z "$val" ] && continue
+
             infisical secrets set "${key}=${val}" \
               --env="$PR_ENV" --projectId="$PROJECT_ID" --domain="$INFISICAL_API_URL"
           done < /tmp/staging.env
@@ -107,17 +121,18 @@ jobs:
    
 
           # 6. Register Infisical webhook for instant secret-change restarts
-          curl --fail --silent --request POST \
+          curl --fail --show-error --request POST \
             --url "${INFISICAL_API_URL}/api/v1/webhooks" \
             --header "Authorization: Bearer $INFISICAL_TOKEN" \
             --header "Content-Type: application/json" \
             --data '{
-              "workspaceId": "'"$PROJECT_ID"'",
+              "projectId": "'"$PROJECT_ID"'",
               "environment": "'"$PR_ENV"'",
               "secretPath": "/",
+              "type": "general",
               "webhookUrl": "https://webhook.'"$DOMAIN"'/hooks/infisical?app=${{ matrix.service }}",
               "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
-            }' || true
+            }'
 
           # 7. Remove old container if exists
           docker stop "$SERVICE_NAME" || true
