@@ -139,10 +139,21 @@ jobs:
             --label "traefik.http.routers.${SERVICE_NAME}.tls.certresolver=myresolver" \
             "$IMAGE"
 
-          # 8. Register webhook AFTER the container exists so secret-change
-          #    events during earlier steps cannot restart a missing container.
-          #    On re-deploy the webhook may already exist — ignore conflicts.
-          curl --silent --show-error --request POST \
+          # 8. Ensure exactly ONE webhook for this PR env (deletes duplicates from re-deploys)
+          WEBHOOK_URL="https://webhook.${DOMAIN}/hooks/infisical?app=${{ matrix.service }}"
+          EXISTING=$(curl --silent --request GET \
+            --url "${INFISICAL_API_URL}/api/v1/webhooks?projectId=${PROJECT_ID}&environment=${PR_ENV}" \
+            --header "Authorization: Bearer $INFISICAL_TOKEN" || echo '{"webhooks":[]}')
+
+          echo "$EXISTING" | jq -r '.webhooks[]?.id // empty' | while read -r WH_ID; do
+            [ -z "$WH_ID" ] && continue
+            echo "Removing existing webhook ${WH_ID}"
+            curl --silent --request DELETE \
+              --url "${INFISICAL_API_URL}/api/v1/webhooks/${WH_ID}" \
+              --header "Authorization: Bearer $INFISICAL_TOKEN" || true
+          done
+
+          curl --fail --show-error --request POST \
             --url "${INFISICAL_API_URL}/api/v1/webhooks" \
             --header "Authorization: Bearer $INFISICAL_TOKEN" \
             --header "Content-Type: application/json" \
@@ -151,6 +162,6 @@ jobs:
               "environment": "'"$PR_ENV"'",
               "secretPath": "/",
               "type": "general",
-              "webhookUrl": "https://webhook.'"$DOMAIN"'/hooks/infisical?app=${{ matrix.service }}",
+              "webhookUrl": "'"$WEBHOOK_URL"'",
               "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
-            }' || true
+            }'
