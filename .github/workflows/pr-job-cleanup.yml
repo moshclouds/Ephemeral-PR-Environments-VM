@@ -49,8 +49,35 @@ jobs:
             "${{ secrets.INFISICAL_NOTIFICATION_PROJECT_ID }}" \
             "${{ secrets.INFISICAL_FRONTEND_PROJECT_ID }}"
           do
-            curl --silent --request DELETE \
-              --url "${INFISICAL_API_URL}/api/v1/workspace/${PROJECT_ID}/environments/${PR_ENV}" \
+            echo "Cleaning Infisical project ${PROJECT_ID} env ${PR_ENV}"
+
+            # 1) Delete webhooks scoped to this PR environment
+            WEBHOOKS=$(curl --silent --request GET \
+              --url "${INFISICAL_API_URL}/api/v1/webhooks?projectId=${PROJECT_ID}&environment=${PR_ENV}" \
+              --header "Authorization: Bearer ${ACCESS_TOKEN}" || echo '{"webhooks":[]}')
+
+            echo "$WEBHOOKS" | jq -r '.webhooks[]?.id // empty' | while read -r WH_ID; do
+              [ -z "$WH_ID" ] && continue
+              echo "Deleting webhook ${WH_ID}"
+              curl --silent --request DELETE \
+                --url "${INFISICAL_API_URL}/api/v1/webhooks/${WH_ID}" \
+                --header "Authorization: Bearer ${ACCESS_TOKEN}" || true
+            done
+
+            # 2) Resolve environment UUID by slug, then delete by id (current Infisical API)
+            ENV_ID=$(curl --silent --request GET \
+              --url "${INFISICAL_API_URL}/api/v1/projects/${PROJECT_ID}/environments/slug/${PR_ENV}" \
+              --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+              | jq -r '.environment.id // empty')
+
+            if [ -z "$ENV_ID" ] || [ "$ENV_ID" = "null" ]; then
+              echo "Environment ${PR_ENV} not found in project ${PROJECT_ID} (already gone?)"
+              continue
+            fi
+
+            echo "Deleting environment id=${ENV_ID}"
+            curl --silent --show-error --request DELETE \
+              --url "${INFISICAL_API_URL}/api/v1/projects/${PROJECT_ID}/environments/${ENV_ID}?hardDelete=true" \
               --header "Authorization: Bearer ${ACCESS_TOKEN}" || true
           done
 
