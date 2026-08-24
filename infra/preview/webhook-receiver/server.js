@@ -16,8 +16,8 @@ function verifyInfisicalSignature(req) {
   const header = req.headers['x-infisical-signature'];
   if (!header || typeof header !== 'string') return false;
 
-  const [tPart, signature] = header.split(';');
-  if (!tPart || !signature) return false;
+  const [, signature] = header.split(';');
+  if (!signature) return false;
 
   const expected = crypto
     .createHmac('sha256', INFISICAL_WEBHOOK_SECRET)
@@ -54,7 +54,18 @@ app.post('/hooks/infisical', (req, res) => {
 
   exec(`docker restart ${containerName}`, (error, stdout, stderr) => {
     if (error) {
-      console.error(`Failed to restart ${containerName}:`, stderr);
+      const detail = String(stderr || error.message || '');
+      // Deploy sets secrets before/while the container is (re)created.
+      // Return 200 so Infisical does not retry-storm "No such container".
+      if (/No such container/i.test(detail)) {
+        console.warn(`Skipped restart — container not ready yet: ${containerName}`);
+        return res.status(200).json({
+          status: 'skipped',
+          message: `Container ${containerName} not found (not deployed yet)`
+        });
+      }
+
+      console.error(`Failed to restart ${containerName}:`, detail);
       return res.status(500).json({ status: 'error', message: 'Failed to restart container' });
     }
 
