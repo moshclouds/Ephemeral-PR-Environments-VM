@@ -62,10 +62,10 @@ jobs:
             --data '{"name":"'"$PR_ENV"'","slug":"'"$PR_ENV"'"}' || true
 
           # 4. SSH-clone staging .env into the Infisical PR environment
-          printf '%s\n' "${{ secrets.STAGING_SSH_PRIVATE_KEY }}" | sed 's/\r$//' > /tmp/staging_key
+          echo "${{ secrets.STAGING_SSH_PRIVATE_KEY }}" > /tmp/staging_key
           chmod 600 /tmp/staging_key
 
-          ssh -i /tmp/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          ssh -i /tmp/staging_key -o StrictHostKeyChecking=no \
             "${{ secrets.STAGING_SSH_USER }}"@"${{ secrets.STAGING_INTERNAL_IP }}" \
             "cat ~/Ephemeral-PR-Environments/app/${{ matrix.service }}/.env" \
             > /tmp/staging.env
