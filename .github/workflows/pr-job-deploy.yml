@@ -121,17 +121,18 @@ jobs:
    
 
           # 6. Register Infisical webhook for instant secret-change restarts
-          curl --fail --silent --request POST \
+          curl --fail --show-error --request POST \
             --url "${INFISICAL_API_URL}/api/v1/webhooks" \
             --header "Authorization: Bearer $INFISICAL_TOKEN" \
             --header "Content-Type: application/json" \
             --data '{
-              "workspaceId": "'"$PROJECT_ID"'",
+              "projectId": "'"$PROJECT_ID"'",
               "environment": "'"$PR_ENV"'",
               "secretPath": "/",
+              "type": "general",
               "webhookUrl": "https://webhook.'"$DOMAIN"'/hooks/infisical?app=${{ matrix.service }}",
               "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
-            }' || true
+            }'
 
           # 7. Remove old container if exists
           docker stop "$SERVICE_NAME" || true
