@@ -70,6 +70,8 @@ services:
   frontend:
     image: ${GCP_AR_REPO}/frontend:staging
     restart: unless-stopped
+    env_file:
+      - ../../app/frontend/.env
     depends_on:
       - order-service
       - inventory-service
