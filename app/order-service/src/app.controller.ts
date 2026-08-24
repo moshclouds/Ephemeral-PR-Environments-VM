@@ -7,9 +7,9 @@ export class AppController {
     return {
       service: 'order-service',
       status: 'healthy',
-      version: '2.0.0-preview',
-      // environment: process.env.NODE_ENV || 'development',
-      timestamp: new Date().toISOString()
+      version: '2.1.0-preview',
+      message: 'Infisical dual-mode entrypoint active',
+      timestamp: new Date().toISOString(),
     };
   }
 }

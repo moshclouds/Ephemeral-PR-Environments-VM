@@ -7,7 +7,9 @@ export class AppController {
     return {
       service: 'notification-service',
       status: 'healthy',
-      timestamp: new Date().toISOString()
+      version: '2.1.0-preview',
+      message: 'Infisical dual-mode entrypoint active',
+      timestamp: new Date().toISOString(),
     };
   }
 }

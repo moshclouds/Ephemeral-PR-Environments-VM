@@ -20,7 +20,7 @@ export default function App() {
           <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
             Ephemeral PRs POC
           </h1>
-          <p className="text-gray-400 mt-2">Test Dynamic Inter-Service Routing</p>
+          <p className="text-gray-400 mt-2">Test Dynamic Inter-Service Routing · v2.1 preview</p>
         </div>
         <div className="flex gap-3 mt-1">
           <button
