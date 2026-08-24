@@ -72,12 +72,26 @@ jobs:
 
           rm -f /tmp/staging_key
 
-          # Import all into Infisical
+          # Import each non-blank, non-comment KEY=VALUE into Infisical
           while IFS= read -r line || [ -n "$line" ]; do
+            # skip blanks and comments
+            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            # must contain =
+            [[ "$line" != *"="* ]] && continue
+
             key="${line%%=*}"
             val="${line#*=}"
+            # trim whitespace around key
+            key="$(echo "$key" | xargs)"
+            # strip surrounding quotes from value
             val="${val%\"}" ; val="${val#\"}"
             val="${val%\'}" ; val="${val#\'}"
+
+            # Infisical rejects empty key or empty value
+            [ -z "$key" ] && continue
+            [ -z "$val" ] && continue
+
             infisical secrets set "${key}=${val}" \
               --env="$PR_ENV" --projectId="$PROJECT_ID" --domain="$INFISICAL_API_URL"
           done < /tmp/staging.env
