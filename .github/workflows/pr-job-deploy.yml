@@ -120,25 +120,11 @@ jobs:
           fi
    
 
-          # 6. Register Infisical webhook for instant secret-change restarts
-          curl --fail --show-error --request POST \
-            --url "${INFISICAL_API_URL}/api/v1/webhooks" \
-            --header "Authorization: Bearer $INFISICAL_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data '{
-              "projectId": "'"$PROJECT_ID"'",
-              "environment": "'"$PR_ENV"'",
-              "secretPath": "/",
-              "type": "general",
-              "webhookUrl": "https://webhook.'"$DOMAIN"'/hooks/infisical?app=${{ matrix.service }}",
-              "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
-            }'
-
-          # 7. Remove old container if exists
+          # 6. Remove old container if exists
           docker stop "$SERVICE_NAME" || true
           docker rm "$SERVICE_NAME" || true
 
-          # 8. Run container — pass Infisical credentials, no .env file on disk
+          # 7. Run container — pass Infisical credentials, no .env file on disk
           docker run -d \
             --name "$SERVICE_NAME" \
             -e INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="${{ secrets.INFISICAL_CLIENT_ID }}" \
@@ -152,3 +138,30 @@ jobs:
             --label "traefik.http.routers.${SERVICE_NAME}.rule=Host(\`${URL}\`)" \
             --label "traefik.http.routers.${SERVICE_NAME}.tls.certresolver=myresolver" \
             "$IMAGE"
+
+          # 8. Ensure exactly ONE webhook for this PR env (deletes duplicates from re-deploys)
+          WEBHOOK_URL="https://webhook.${DOMAIN}/hooks/infisical?app=${{ matrix.service }}"
+          EXISTING=$(curl --silent --request GET \
+            --url "${INFISICAL_API_URL}/api/v1/webhooks?projectId=${PROJECT_ID}&environment=${PR_ENV}" \
+            --header "Authorization: Bearer $INFISICAL_TOKEN" || echo '{"webhooks":[]}')
+
+          echo "$EXISTING" | jq -r '.webhooks[]?.id // empty' | while read -r WH_ID; do
+            [ -z "$WH_ID" ] && continue
+            echo "Removing existing webhook ${WH_ID}"
+            curl --silent --request DELETE \
+              --url "${INFISICAL_API_URL}/api/v1/webhooks/${WH_ID}" \
+              --header "Authorization: Bearer $INFISICAL_TOKEN" || true
+          done
+
+          curl --fail --show-error --request POST \
+            --url "${INFISICAL_API_URL}/api/v1/webhooks" \
+            --header "Authorization: Bearer $INFISICAL_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{
+              "projectId": "'"$PROJECT_ID"'",
+              "environment": "'"$PR_ENV"'",
+              "secretPath": "/",
+              "type": "general",
+              "webhookUrl": "'"$WEBHOOK_URL"'",
+              "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
+            }'

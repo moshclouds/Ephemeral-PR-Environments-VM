@@ -7,8 +7,8 @@ export class AppController {
     return {
       service: 'inventory-service',
       status: 'healthy',
-      version: '2.1.0-preview',
-      message: 'Infisical dual-mode entrypoint active',
+      version: '2.2.0-preview',
+      message: 'Webhook + Infisical cleanup verified',
       timestamp: new Date().toISOString(),
     };
   }
