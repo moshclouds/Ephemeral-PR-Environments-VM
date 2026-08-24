@@ -21,8 +21,10 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
-# Install openssl for Prisma
-RUN apk add --no-cache openssl
+# Install openssl for Prisma and Infisical CLI
+RUN apk add --no-cache openssl bash wget \
+    && wget -qO- 'https://artifacts-cli.infisical.com/setup.apk.sh' | sh \
+    && apk add --no-cache infisical
 
 # Install production dependencies only
 COPY package*.json ./
@@ -39,6 +41,8 @@ COPY --from=builder /app/dist ./dist
 # Copy Prisma schema and migrations for auto-migration
 COPY --from=builder /app/prisma ./prisma
 
-# Start the application
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 3001
-CMD npx prisma migrate deploy && npm run start:prod
+CMD ["/entrypoint.sh"]

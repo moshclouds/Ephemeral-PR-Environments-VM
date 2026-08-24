@@ -34,18 +34,25 @@ jobs:
         run: |
           PR_ENV="pr-${{ inputs.pr_number }}"
           DOMAIN="${{ secrets.PREVIEW_DOMAIN }}"
-          
-          ACCESS_TOKEN=$(curl --silent --request POST \
-            --url https://infisical.${DOMAIN}/api/v1/auth/universal-auth/login \
-            --header "Content-Type: application/json" \
-            --data '{
-              "clientId": "${{ secrets.INFISICAL_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.INFISICAL_CLIENT_SECRET }}"
-            }' | jq -r '.accessToken')
-          
-          curl --silent --request DELETE \
-            --url https://infisical.${DOMAIN}/api/v1/workspace/${{ secrets.INFISICAL_PROJECT_ID }}/environments/$PR_ENV \
-            --header "Authorization: Bearer $ACCESS_TOKEN" || true
+          INFISICAL_API_URL="https://infisical.${DOMAIN}"
+
+          ACCESS_TOKEN=$(infisical login \
+            --method=universal-auth \
+            --client-id="${{ secrets.INFISICAL_CLIENT_ID }}" \
+            --client-secret="${{ secrets.INFISICAL_CLIENT_SECRET }}" \
+            --domain="$INFISICAL_API_URL" \
+            --plain --silent)
+
+          for PROJECT_ID in \
+            "${{ secrets.INFISICAL_ORDER_PROJECT_ID }}" \
+            "${{ secrets.INFISICAL_INVENTORY_PROJECT_ID }}" \
+            "${{ secrets.INFISICAL_NOTIFICATION_PROJECT_ID }}" \
+            "${{ secrets.INFISICAL_FRONTEND_PROJECT_ID }}"
+          do
+            curl --silent --request DELETE \
+              --url "${INFISICAL_API_URL}/api/v1/workspace/${PROJECT_ID}/environments/${PR_ENV}" \
+              --header "Authorization: Bearer ${ACCESS_TOKEN}" || true
+          done
 
       - name: Prune Unused Docker Images
         run: docker image prune -a -f

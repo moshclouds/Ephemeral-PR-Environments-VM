@@ -7,19 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Declare build args for Vite environment variables
-ARG VITE_API_ORDER_URL
-ARG VITE_API_INVENTORY_URL
-ARG VITE_API_NOTIFICATION_URL
-ARG VITE_CLOUD_RUN_SUFFIX
-
-# Bind them so they are available to Node/Vite during compile
-ENV VITE_API_ORDER_URL=$VITE_API_ORDER_URL
-ENV VITE_API_INVENTORY_URL=$VITE_API_INVENTORY_URL
-ENV VITE_API_NOTIFICATION_URL=$VITE_API_NOTIFICATION_URL
-ENV VITE_CLOUD_RUN_SUFFIX=$VITE_CLOUD_RUN_SUFFIX
-
-# Copy source code and build
+# Copy source code and build (no VITE_* args — URLs are injected at runtime)
 COPY . .
 RUN npm run build
 
@@ -28,13 +16,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install `serve` to run a static file server
-RUN npm install -g serve
+# Install `serve` and Infisical CLI
+RUN apk add --no-cache bash wget \
+    && wget -qO- 'https://artifacts-cli.infisical.com/setup.apk.sh' | sh \
+    && apk add --no-cache infisical \
+    && npm install -g serve
 
 # Copy the built assets from the builder stage
 COPY --from=builder /app/dist ./dist
 
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 80
 
-# Serve the static files on port 80
-CMD ["serve", "-s", "dist", "-l", "80"]
+CMD ["/entrypoint.sh"]

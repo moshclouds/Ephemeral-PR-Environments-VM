@@ -19,7 +19,7 @@ jobs:
     strategy:
       matrix:
         service: ${{ fromJSON(inputs.changed_services) }}
-  
+
     steps:
       - name: Deploy to Preview VM
         run: |
@@ -28,65 +28,112 @@ jobs:
           PR_ENV="pr-${{ inputs.pr_number }}"
           DOMAIN="${{ secrets.PREVIEW_DOMAIN }}"
           URL="${SERVICE_NAME}.${DOMAIN}"
-          
+          INFISICAL_API_URL="https://infisical.${DOMAIN}"
+
           echo "Deploying $SERVICE_NAME to https://$URL"
-          
-          # 1. Login via API
-          export INFISICAL_TOKEN=$(curl --silent --request POST \
-            --url https://infisical.${DOMAIN}/api/v1/auth/universal-auth/login \
-            --header "Content-Type: application/json" \
-            --data '{
-              "clientId": "${{ secrets.INFISICAL_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.INFISICAL_CLIENT_SECRET }}"
-            }' | jq -r '.accessToken')
-            
-          if [ -z "$INFISICAL_TOKEN" ] || [ "$INFISICAL_TOKEN" == "null" ]; then
-            echo "Failed to authenticate with Infisical API."
+
+          # 1. Select per-service Infisical project ID
+          case "${{ matrix.service }}" in
+            order-service)        PROJECT_ID="${{ secrets.INFISICAL_ORDER_PROJECT_ID }}" ;;
+            inventory-service)    PROJECT_ID="${{ secrets.INFISICAL_INVENTORY_PROJECT_ID }}" ;;
+            notification-service) PROJECT_ID="${{ secrets.INFISICAL_NOTIFICATION_PROJECT_ID }}" ;;
+            frontend)             PROJECT_ID="${{ secrets.INFISICAL_FRONTEND_PROJECT_ID }}" ;;
+          esac
+
+          # 2. Login via CLI (official recommended method)
+          export INFISICAL_TOKEN
+          INFISICAL_TOKEN=$(infisical login \
+            --method=universal-auth \
+            --client-id="${{ secrets.INFISICAL_CLIENT_ID }}" \
+            --client-secret="${{ secrets.INFISICAL_CLIENT_SECRET }}" \
+            --domain="$INFISICAL_API_URL" \
+            --plain --silent)
+
+          if [ -z "$INFISICAL_TOKEN" ] || [ "$INFISICAL_TOKEN" = "null" ]; then
+            echo "Infisical login failed."
             exit 1
           fi
-          
-          # 2. Create Environment via API
-          curl --silent --request POST \
-            --url https://infisical.${DOMAIN}/api/v1/workspace/${{ secrets.INFISICAL_PROJECT_ID }}/environments \
-            --header "Authorization: Bearer $INFISICAL_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data '{
-              "name": "'$PR_ENV'",
-              "slug": "'$PR_ENV'"
-            }' || true
-          
-          # 3. Inject Dynamic DB URL using CLI (which will pick up the exported INFISICAL_TOKEN automatically)
-          if [ "${{ matrix.service }}" == "order-service" ]; then
-            infisical secrets set DATABASE_URL="postgresql://postgres:postgres@preview-postgres:5432/order_db_${PR_ENV}" --env $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }} --domain https://infisical.${DOMAIN}
-          elif [ "${{ matrix.service }}" == "inventory-service" ]; then
-            infisical secrets set DATABASE_URL="mysql://root:mysqlroot@preview-mysql:3306/inventory_db_${PR_ENV}" --env $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }} --domain https://infisical.${DOMAIN}
-          elif [ "${{ matrix.service }}" == "notification-service" ]; then
-            infisical secrets set DATABASE_URL="mongodb://preview-mongo:27017/notification_db_${PR_ENV}?replicaSet=rs0&directConnection=true" --env $PR_ENV --projectId ${{ secrets.INFISICAL_PROJECT_ID }} --domain https://infisical.${DOMAIN}
-          fi
-          
-          # 4. Register Webhook
-          curl --silent --request POST \
-            --url https://infisical.${DOMAIN}/api/v1/webhooks \
-            --header "Authorization: Bearer $INFISICAL_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data '{
-              "workspaceId": "${{ secrets.INFISICAL_PROJECT_ID }}",
-              "environment": "'$PR_ENV'",
-              "secretPath": "/",
-              "webhookUrl": "https://webhook.'$DOMAIN'/hooks/infisical?app=${{ matrix.service }}",
-              "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
-          }' || true
 
-          # 5. Remove old container if exists
-          docker stop $SERVICE_NAME || true
-          docker rm $SERVICE_NAME || true
-          
-          # 6. Run Docker Container using Infisical CLI for secrets, attached to preview-net
-          infisical run --projectId ${{ secrets.INFISICAL_PROJECT_ID }} --env $PR_ENV --domain https://infisical.${DOMAIN} -- \
+          # 3. Create PR environment in Infisical
+          curl --silent --request POST \
+            --url "${INFISICAL_API_URL}/api/v1/workspace/${PROJECT_ID}/environments" \
+            --header "Authorization: Bearer $INFISICAL_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{"name":"'"$PR_ENV"'","slug":"'"$PR_ENV"'"}' || true
+
+          # 4. SSH-clone staging .env into the Infisical PR environment
+          echo "${{ secrets.STAGING_SSH_PRIVATE_KEY }}" > /tmp/staging_key
+          chmod 600 /tmp/staging_key
+
+          ssh -i /tmp/staging_key -o StrictHostKeyChecking=no \
+            "${{ secrets.STAGING_SSH_USER }}"@"${{ secrets.STAGING_INTERNAL_IP }}" \
+            "cat ~/Ephemeral-PR-Environments/app/${{ matrix.service }}/.env" \
+            > /tmp/staging.env
+
+          rm -f /tmp/staging_key
+
+          # Import all into Infisical
+          while IFS= read -r line || [ -n "$line" ]; do
+            key="${line%%=*}"
+            val="${line#*=}"
+            val="${val%\"}" ; val="${val#\"}"
+            val="${val%\'}" ; val="${val#\'}"
+            infisical secrets set "${key}=${val}" \
+              --env="$PR_ENV" --projectId="$PROJECT_ID" --domain="$INFISICAL_API_URL"
+          done < /tmp/staging.env
+          rm -f /tmp/staging.env
+
+          # 5. Override secrets with PR-specific values
+          # Source DB credentials from the preview VM's .env — same values the DB containers use
+          set -a
+          source ~/Ephemeral-PR-Environments/infra/preview/.env
+          set +a
+
+          if [ "${{ matrix.service }}" = "order-service" ]; then
+            infisical secrets set \
+              "DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@preview-postgres:5432/order_db_pr_${{ inputs.pr_number }}" \
+              --env="$PR_ENV" --projectId="$PROJECT_ID" --domain="$INFISICAL_API_URL"
+
+          elif [ "${{ matrix.service }}" = "inventory-service" ]; then
+            infisical secrets set \
+              "DATABASE_URL=mysql://root:${MYSQL_ROOT_PASSWORD}@preview-mysql:3306/inventory_db_pr_${{ inputs.pr_number }}" \
+              --env="$PR_ENV" --projectId="$PROJECT_ID" --domain="$INFISICAL_API_URL"
+
+          elif [ "${{ matrix.service }}" = "notification-service" ]; then
+            infisical secrets set \
+              "DATABASE_URL=mongodb://preview-mongo:27017/notification_db_pr_${{ inputs.pr_number }}?replicaSet=rs0&directConnection=true" \
+              --env="$PR_ENV" --projectId="$PROJECT_ID" --domain="$INFISICAL_API_URL"
+          fi
+   
+
+          # 6. Register Infisical webhook for instant secret-change restarts
+          curl --fail --silent --request POST \
+            --url "${INFISICAL_API_URL}/api/v1/webhooks" \
+            --header "Authorization: Bearer $INFISICAL_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{
+              "workspaceId": "'"$PROJECT_ID"'",
+              "environment": "'"$PR_ENV"'",
+              "secretPath": "/",
+              "webhookUrl": "https://webhook.'"$DOMAIN"'/hooks/infisical?app=${{ matrix.service }}",
+              "webhookSecretKey": "${{ secrets.WEBHOOK_SECRET }}"
+            }' || true
+
+          # 7. Remove old container if exists
+          docker stop "$SERVICE_NAME" || true
+          docker rm "$SERVICE_NAME" || true
+
+          # 8. Run container — pass Infisical credentials, no .env file on disk
           docker run -d \
-            --name $SERVICE_NAME \
+            --name "$SERVICE_NAME" \
+            -e INFISICAL_UNIVERSAL_AUTH_CLIENT_ID="${{ secrets.INFISICAL_CLIENT_ID }}" \
+            -e INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET="${{ secrets.INFISICAL_CLIENT_SECRET }}" \
+            -e INFISICAL_PROJECT_ID="$PROJECT_ID" \
+            -e INFISICAL_ENV="$PR_ENV" \
+            -e INFISICAL_API_URL="$INFISICAL_API_URL" \
+            -e INFISICAL_DISABLE_UPDATE_CHECK=true \
             --network preview_preview-net \
             --label "traefik.enable=true" \
             --label "traefik.http.routers.${SERVICE_NAME}.rule=Host(\`${URL}\`)" \
             --label "traefik.http.routers.${SERVICE_NAME}.tls.certresolver=myresolver" \
-            $IMAGE
+            "$IMAGE"

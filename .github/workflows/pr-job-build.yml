@@ -37,13 +37,5 @@ jobs:
       - name: Build & Push Image
         run: |
           IMAGE="${{ secrets.GCP_AR_REPO }}/${{ matrix.service }}:pr-${{ inputs.pr_number }}"
-          if [ "${{ matrix.service }}" == "frontend" ]; then
-            docker build \
-              --build-arg VITE_API_ORDER_URL=${{ secrets.VITE_API_ORDER_URL }} \
-              --build-arg VITE_API_INVENTORY_URL=${{ secrets.VITE_API_INVENTORY_URL }} \
-              --build-arg VITE_API_NOTIFICATION_URL=${{ secrets.VITE_API_NOTIFICATION_URL }} \
-              -t $IMAGE ./app/${{ matrix.service }}
-          else
-            docker build -t $IMAGE ./app/${{ matrix.service }}
-          fi
+          docker build -t $IMAGE ./app/${{ matrix.service }}
           docker push $IMAGE
